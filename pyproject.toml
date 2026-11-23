@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "todo-scan"
+version = "0.1.0"
+description = "Find TODO/FIXME comments in a project. Standard library only; uses git for .gitignore rules."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "EL_MAN" }]
+keywords = ["todo", "fixme", "comments", "cli", "technical-debt"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/8el7/todo-scan"
+Repository = "https://github.com/8el7/todo-scan"
+Issues = "https://github.com/8el7/todo-scan/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+# Exact versions of the linters: a new release must not turn CI red by itself.
+dev = ["pytest>=7", "ruff==0.17.6", "mypy==2.4.1", "build>=1.2", "twine>=6"]
+
+[project.scripts]
+todo-scan = "todo_scan.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE"]
+# Optional[X] stays: the package supports Python 3.9, where "X | None" cannot be evaluated at runtime.
+ignore = ["UP007", "UP045"]
+
+[tool.mypy]
+files = ["src"]
+strict = true
