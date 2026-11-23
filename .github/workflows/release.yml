@@ -1,0 +1,136 @@
+name: release
+
+# Runs when a tag like v0.1.0 is pushed. The tag must equal "v" + __version__ in src/todo_scan/__init__.py
+# (pyproject.toml takes the version from there: dynamic = ["version"]).
+# Flow: build -> TestPyPI (automatic) -> PyPI (waits for a manual approval on the "pypi" environment).
+on:
+  push:
+    tags: ["v*"]
+
+# Default for every job. The two publish jobs set their own permissions (id-token only).
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Tag matches __version__
+        # The version lives only in src/todo_scan/__init__.py (pyproject.toml has dynamic = ["version"]).
+        # It is read as text with ast, so nothing from the package is imported or run.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'EOF'
+          import ast
+          import os
+
+          with open("src/todo_scan/__init__.py", encoding="utf-8") as f:
+              tree = ast.parse(f.read())
+          values = [
+              node.value.value
+              for node in tree.body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets)
+              and isinstance(node.value, ast.Constant)
+              and isinstance(node.value.value, str)
+          ]
+          if len(values) != 1:
+              raise SystemExit("expected exactly one string literal __version__ in src/todo_scan/__init__.py")
+          tag = os.environ["TAG"]
+          if tag != "v" + values[0]:
+              raise SystemExit(f"tag {tag} does not match __version__ {values[0]}")
+          EOF
+      - name: No placeholders left
+        run: |
+          if grep -rIn --exclude-dir=.git --exclude-dir=.github -E "YOUR-USERNAME|YOUR NAME" .; then
+            echo "Replace the placeholders listed above before releasing"; exit 1
+          fi
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install build twine
+          python -m build
+          twine check --strict dist/*
+      - name: Built files carry the tag's version
+        # The final check: what gets uploaded must be exactly the version of the tag.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'EOF'
+          import email
+          import os
+          import pathlib
+          import tarfile
+          import zipfile
+
+          version = os.environ["TAG"][1:]
+          wheel = f"todo_scan-{version}-py3-none-any.whl"
+          sdist = f"todo_scan-{version}.tar.gz"
+          names = sorted(p.name for p in pathlib.Path("dist").iterdir())
+          if names != sorted([wheel, sdist]):
+              raise SystemExit(f"dist/ holds {names}, expected {sorted([wheel, sdist])}")
+
+          # The file names and the metadata inside come from the same build, but check the metadata itself.
+          with zipfile.ZipFile(f"dist/{wheel}") as z:
+              (member,) = [n for n in z.namelist() if n.endswith(".dist-info/METADATA")]
+              found = email.message_from_bytes(z.read(member))["Version"]
+          if found != version:
+              raise SystemExit(f"wheel METADATA says Version {found}, expected {version}")
+          with tarfile.open(f"dist/{sdist}") as t:
+              (member,) = [n for n in t.getnames() if n.count("/") == 1 and n.endswith("/PKG-INFO")]
+              found = email.message_from_binary_file(t.extractfile(member))["Version"]
+          if found != version:
+              raise SystemExit(f"sdist PKG-INFO says Version {found}, expected {version}")
+          EOF
+      - name: Smoke test the built wheel
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install dist/*.whl
+          out="$(/tmp/smoke/bin/todo-scan --version)"
+          echo "$out"
+          test "$out" = "todo-scan ${TAG#v}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-to-testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/todo-scan
+    permissions:
+      id-token: write  # required for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  publish-to-pypi:
+    needs: publish-to-testpypi
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi  # add a required reviewer to this environment in the repo settings
+      url: https://pypi.org/p/todo-scan
+    permissions:
+      id-token: write  # required for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
