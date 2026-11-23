@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "todo-scan"
-version = "0.1.0"
+dynamic = ["version"]  # single source: __version__ in src/todo_scan/__init__.py
 description = "Find TODO/FIXME comments in a project. Standard library only; uses git for .gitignore rules."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -43,6 +43,9 @@ dev = ["pytest>=7", "ruff==0.17.6", "mypy==2.4.1", "build>=1.2", "twine>=6"]
 
 [project.scripts]
 todo-scan = "todo_scan.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "todo_scan.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
